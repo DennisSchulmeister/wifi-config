@@ -1,0 +1,814 @@
+#! /bin/sh
+
+# wifi-config
+# © 2023 Dennis Schulmeister-Zimolong <dennis@wpvs.de>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+set +e
+alias function=
+
+title="WiFi Configuration"
+config_file="/etc/wpa_supplicant/wpa_supplicant.conf"
+interface=""
+
+R=""
+
+### FIXME: wpa_cli reconfigure / save_config --> remove old entries!
+
+
+#===============================================================================
+# General Utility functions
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Check, whether the given program exists and exit the script with RC 1, if
+# it doesn't.
+#
+# PARAMETER $1: Program name
+# RETURNS: Nothing
+#-------------------------------------------------------------------------------
+function check_program_exists() {
+    which $1 > /dev/null
+
+    if [ $? -ne 0 ]; then
+        echo "This script requires $1 to be installed."
+        exit 1
+    fi
+}
+
+#===============================================================================
+# Network-related functions
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Call `wpa_cli` command passing the currently selected network interfaces as
+# an fixed option.
+#
+# PARAMETER $1: "interface" = Add interface, otherwise don't
+# OTHER PARAMETERS: Additional parameters for `wpa_cli`
+# RETURNS: Return code of `wpa_cli`
+# VARIABLE $R: Standard output of `wpa_cli`
+#-------------------------------------------------------------------------------
+function call_wpa_cli() {
+    local command="wpa_cli"
+    if [ $1 = "-i" ]; then
+        if [ "$interface" != "" ]; then
+            command="$command -i $interface"
+        fi
+
+        shift
+    fi
+
+    while [ $# -ne 0 ]; do
+        command="$command \"$1\""
+        shift
+    done
+
+    command="R=\$($command)"
+    eval $command
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Determine available WiFi network interfaces.
+# VARIABLE $R: Network interfaces
+#-------------------------------------------------------------------------------
+function get_all_interfaces() {
+    R=$(wpa_cli interface | tail -n +3)
+}
+
+#-------------------------------------------------------------------------------
+# Try to determine the real WiFi network interface and set the global variable
+# $interface accordingly.
+#-------------------------------------------------------------------------------
+function determine_network_interface() {
+    get_all_interfaces
+
+    for adapter in $R; do
+        case "$adapter" in
+            p2p*)
+                ;;
+            *)
+                interface="$adapter"
+                return 0
+                ;;
+        esac
+    done
+
+    interface=""
+    return 1
+}
+
+#===============================================================================
+# Dialogue functions for various types of dialogues
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Call `dialog` command with some fixed parameters and append parameters given
+# to this function. The standard output, usually containing the user's input
+# or choice is catched into the global variable $R.
+#
+# PARAMETERS: Additional parameters for `dialog`
+# RETURNS: Return code of `dialog`
+# VARIABLE $R: User input
+#-------------------------------------------------------------------------------
+function show_dialog() {
+    local command="dialog --backtitle \"$title\""
+
+    while [ $# -ne 0 ]; do
+        command="$command \"$1\""
+        shift
+    done
+
+    command="R=\$($command 2>&1 >/dev/tty)"
+    eval $command
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Variant of show_dialog() that captures the result into a temporary file
+# instead of the global variable $R, to preserve whitespaces. $R then contains
+# the path of that file.
+#
+# PARAMETERS: Additional parameters for `dialog`
+# RETURNS: Return code of `dialog`
+# VARIABLE $R: Temporary file name on Okay
+#-------------------------------------------------------------------------------
+function show_dialog_to_file() {
+    local tmpfile=$(mktemp)
+    local command="dialog --backtitle \"$title\""
+
+    while [ $# -ne 0 ]; do
+        command="$command \"$1\""
+        shift
+    done
+
+    command="$command 2>\"$tmpfile\""
+    eval $command
+    local rc=$?
+
+    if [ $rc -ne 0 ]; then
+        rm "$tmpfile"
+    else
+        R="$tmpfile"
+    fi
+
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Show a selection menu with a window title, text and one ore more options.
+# Each options consists of a tag and a description passed as additional
+# parameters to this function.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# OTHER PARAMETERS: Tag; Description ...
+# RETURNS: 0 on Okay, 1 otherwise
+# VARIABLE $R: The selected tag on Okay
+#-------------------------------------------------------------------------------
+function show_menu() {
+    local args="--title \"$1\" --menu \"$2\" 0 0 0"
+    shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog $args
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Shows a simple message box that stay open until closed by the user.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# RETURNS: Always 0
+#-------------------------------------------------------------------------------
+function show_message() {
+    local args="--title \"$1\" --msgbox \"$2\" 0 0"
+    shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog $args
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Shows a simple message box that stay open until closed by the user.
+#
+# PARAMETER $1: Pause text
+# PARAMETER $2: Duration in seconds
+# RETURNS: 0 on success, 1 when cancelled
+#-------------------------------------------------------------------------------
+function show_pause() {
+    local len=$(echo -n "$1" | wc -m)
+    len=$((len+10))
+
+    local args="--pause \"$1\" 8 $len \"$2\""
+    shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog $args
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Shows a simple message box with a yes/no question.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# RETURNS: 0 if yes, 1 otherwise
+#-------------------------------------------------------------------------------
+function show_yesno() {
+    local args="--title \"$1\" --yesno \"$2\" 0 0"
+    shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog $args
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Shows a simple message box to input a string value.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# PARAMETER $3: Initial value (optional)
+# RETURNS: 0 on Okay, 1 otherwise
+# VARIABLE $R: The input text on Okay
+#-------------------------------------------------------------------------------
+function show_text_input() {
+    local args="--title \"$1\" --inputbox \"$2\" 0 0 \"$3\""
+    shift; shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog $args
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Shows a simple message box to input a password.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# RETURNS: 0 on Okay, 1 otherwise
+# VARIABLE $R: The password on Okay
+#-------------------------------------------------------------------------------
+function show_password_input() {
+    local args_hidden="--title \"$1\" --extra-button --extra-label Show --insecure --passwordbox \"$2\" 0 0"
+    local args_visible="--title \"$1\" --extra-button --extra-label Hide --inputbox \"$2\" 0 0"
+    local password
+    local hidden=1
+    local quit=0
+    local rc=0
+
+    while [ $quit -eq 0 ]; do
+        if [ $hidden -eq 1 ]; then
+            eval show_dialog $args_hidden "$password"
+            rc=$?
+
+            if [ $rc -eq 3 ]; then
+                password="$R"
+                hidden=0
+            else
+                quit=1
+            fi
+        else
+            eval show_dialog $args_visible "$password"
+            rc=$?
+
+            if [ $rc -eq 3 ]; then
+                password="$R"
+                hidden=1
+            else
+                quit=1
+            fi
+        fi
+    done
+
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Variant of show_password_input() specifically adapted to asking the user for
+# his/her sudo password. If no password is needed due to previous usage of sudo,
+# an empty string is returned. Otherwise the user is asked to enter the password,
+# which is then probed against sudo.
+#
+# PARAMETER $1: Window title
+# RETURNS: 0 on Okay, 1 otherwise
+# VARIABLE $R: The password on Okay
+#-------------------------------------------------------------------------------
+function show_sudo_password_input() {
+    local quit=0
+    local skip_password_input=1
+    local password=""
+
+    while true; do
+        if [ $skip_password_input -eq 0 ]; then
+            show_password_input "$1" \
+                                "Please enter your password." \
+                                ""
+            local rc=$?
+
+            if [ $rc -ne 0 ]; then
+                break
+            fi
+
+            password="$R"
+        else
+            password=""
+            skip_password_input=0
+        fi
+
+        echo $password | sudo -S ls
+
+        if [ $? -eq 0 ]; then
+            rc=0
+            break
+        else
+            rc=1
+        fi
+    done
+
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Shows a simple text editor widget that can be used to manually make small
+# changes to a configuration file.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: File patch
+# RETURNS: 0 on Okay, 1 otherwise
+# VARIABLE $R: Temporary file with the changed content
+#-------------------------------------------------------------------------------
+function show_file_editor() {
+    local args="--title \"$1\" --editbox \"$2\" 0 0"
+    shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog_to_file $args
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Runs the command given in $3 and display its output in a window.
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# PARAMETER $3: Command to run
+# RETURNS: Always 0
+#-------------------------------------------------------------------------------
+function show_command_output() {
+    local args="--title \"$1\" --prgbox \"$2\" \"$3\" 255 255"
+    shift; shift; shift
+    while [ $# -ne 0 ]; do args="$args \"$1\""; shift; done
+
+    eval show_dialog $args
+    return $?
+}
+
+#===============================================================================
+# Screen functions
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Screen: Main Menu
+#-------------------------------------------------------------------------------
+function main_screen() {
+    call_wpa_cli reconfigure
+
+    while true; do
+        show_menu "Main Menu"                                   \
+                  "Selected Network Interface: $interface"      \
+                    "1" "Select Network Interface"              \
+                    "2" "Scan for Available Networks"           \
+                    "-" "-------------------------------------" \
+                    "3" "List WiFi Network Configurations"      \
+                    "4" "Add WiFi Network Configuration"        \
+                    "5" "Edit WiFi Network Configuration"       \
+                    "6" "Delete WiFi Network Configuration"     \
+                    "-" "-------------------------------------" \
+                    "7" "Manually Edit WiFi Configuration File" \
+                    "8" "Reload WiFi Configuration File"        \
+                    "9" "Show Currently Used IP Addresses"
+
+        if [ $? -ne 0 ]; then
+            break
+        fi
+
+        case $R in
+            1) select_interface_screen     ;;
+            2) scan_networks_screen        ;;
+            3) list_networks_screen        ;;
+            4) add_network_screen          ;;
+            5) edit_network_screen         ;;
+            6) delete_network_screen       ;;
+            7) edit_config_file_screen     ;;
+            8) reload_configuration_screen ;;
+            9) show_ip_addresses_screen    ;;
+        esac
+    done
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Select Network Interface
+#-------------------------------------------------------------------------------
+function select_interface_screen() {
+    get_all_interfaces
+
+    local adapters="$R"
+    local options=""
+    local nr=0
+
+    for adapter in $adapters; do
+        nr=$((nr+1))
+        options="$options $nr $adapter"
+    done
+
+    show_menu "Network Interfaces" \
+              "Please select the network interface to configure." \
+              $options
+
+    if [ $? -eq 0 ]; then
+        nr=0
+
+        for adapter in $adapters; do
+            nr=$((nr+1))
+
+            if [ $nr -eq $R ]; then
+                interface=$adapter
+                break
+            fi
+        done
+    fi
+
+    return 0
+}
+
+#-------------------------------------------------------------------------------
+# Scan for Available Networks (base function for different screens)
+# RETURNS: 0 on success, 1 otherwise
+# VARIABLE $R: List of detected networks, strongest signal first
+#              Columns = BSSID, FREQUENCY, LEVEL, FLAGS, SSID
+#-------------------------------------------------------------------------------
+function scan_networks_base() {
+    call_wpa_cli -i scan
+
+    show_pause "Please wait a few seconds for the scan …" 5
+    if [ $? -ne 0 ]; then return; fi
+
+    call_wpa_cli -i scan_results
+    rc=$?
+
+    local tmpfile=$(mktemp)
+    echo "$R" | tail -n +2 | sort -nrk 3,3 > "$tmpfile"
+    R=$(cat $tmpfile)
+
+    rm "$tmpfile"
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Scan for Available Networks
+#-------------------------------------------------------------------------------
+function scan_networks_screen() {
+    scan_networks_base
+    if [ $? -ne 0 ]; then return $?; fi
+
+    local tmpfile=$(mktemp)
+    echo "$R" | column --table -s "$(printf '\t')" \
+                --table-columns BSSID,FREQUENCY,LEVEL,FLAGS,SSID \
+                --table-right FREQUENCY,LEVEL > "$tmpfile"
+
+    show_command_output "Scan Networks" "Nearby WiFi networks (numerically higher level is better)" "cat \"$tmpfile\""
+
+    rm "$tmpfile"
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Show WiFi Network Configurations (base function for different screens)
+#
+# PARAMETER $1: Window title
+# PARAMETER $2: Window text
+# RETURNS: 0 on Okay, 1 otherwise
+# VARIABLE $R: Selected network ID
+#-------------------------------------------------------------------------------
+function list_networks_base() {
+    call_wpa_cli list_networks
+
+    local networks="$R"
+    local options=""
+    local tmpfile=$(mktemp)
+    local oldifs="$IFS"
+    IFS=""
+
+    echo "$networks" | tail -n +3 | while read -r line; do
+        local tag=$(echo $line | awk -F"\t" '{print $1}')
+        local net=$(echo $line | awk -F"\t" '{print $2}')
+        echo -n "\"$tag\" \"$net\" " >> "$tmpfile"
+    done
+
+    options=$(cat "$tmpfile")
+    rm "$tmpfile"
+
+    eval show_menu \"$1\" \"$2\" $options
+    local rc=$?
+
+    IFS="$oldifs"
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Show WiFi Network Configurations
+#-------------------------------------------------------------------------------
+function list_networks_screen() {
+    while true; do
+        list_networks_base "Network Configurations" "Known WiFi networks:"
+        if [ $? -ne 0 ]; then break; fi
+    done
+}
+
+#-------------------------------------------------------------------------------
+# Enter WifI network data and save result (base function for different screens)
+#
+# PARAMETER $1: Network SSID
+# PARAMETER $2: Window title ?
+# RETURNS: 0 on Okay, 1 otherwise
+#-------------------------------------------------------------------------------
+function add_network_base() {
+    local ssid="$1"
+    local windowTitle="$2"
+
+    # Ask for network parameters
+    show_menu "$windowTitle" "What security level does the network use?" \
+                "1"  "Open WiFi with no encryption" \
+                "2"  "Personal home network with shared password" \
+                "3"  "Corporate/University network with personalized passwords" \
+
+    if [ $? -ne 0 ]; then return $?; fi
+    local network_type=""
+    local identity=""
+    local password=""
+
+    case "$R" in
+        1)
+            network_type="open"
+            ;;
+        2)
+            network_type="home"
+
+            while [ "$password" = "" ]; do
+                show_password_input "$windowTitle" "Please enter the network password:" ""
+                if [ $? -ne 0 ]; then return $?; fi
+                password="$R"
+            done
+            ;;
+        3)
+            network_type="enterprise"
+
+            while [ "$identity" = "" ]; do
+                show_text_input "$windowTitle" "Please enter your personal network user name:" ""
+                if [ $? -ne 0 ]; then return $?; fi
+                identity="$R"
+            done
+
+            while [ "$password" = "" ]; do
+                show_password_input "$windowTitle" "Please enter your personal network password:" ""
+                if [ $? -ne 0 ]; then return $?; fi
+                password="$R"
+            done
+
+            ;;
+    esac
+
+    # Delete network, if it already exists
+    local network=$(wpa_cli list_networks | tail -n +3 | awk -F"\t" "{if (\$2 == \"$ssid\") print \$1}")
+
+    if [ "$network" != "" ]; then
+        call_wpa_cli remove_network "$network"
+        call_wpa_cli save_config
+    fi
+
+    # Save network by directly writing the configuration file, because wpa_cli
+    # seems to be extremely buggy (most of the time not) writing network changes
+    # to the file.
+    local tmpfile=$(mktemp)
+    echo ""                    > "$tmpfile"
+    echo "network={"          >> "$tmpfile"
+    echo "    ssid=\"$ssid\"" >> "$tmpfile"
+
+    case "$network_type" in
+        home)
+            echo "    psk=\"$password\"" >> "$tmpfile"
+            ;;
+        enterprise)
+            echo "    identity=\"$identity\"" >> "$tmpfile"
+            echo "    password=\"$password\"" >> "$tmpfile"
+            echo "    scan_ssid=1"            >> "$tmpfile"
+            echo "    key_mgmt=WPA-EAP"       >> "$tmpfile"
+            echo "    eap=EAP"                >> "$tmpfile"
+            echo "    phase1=\"peaplabel=0\"" >> "$tmpfile"
+            echo "    phase2=auth=MSCHAPV2\"" >> "$tmpfile"
+            ;;
+    esac
+
+    echo "}" >> "$tmpfile"
+
+    if [ -w "$config_file" ]; then
+        cat "$tmpfile" >> "$config_file"
+        rc=0
+    else
+        show_sudo_password_input "$windowTitle"
+        local rc=$?
+
+        if [ $rc -eq 0 ]; then
+            echo $R | sudo -S sh -c "cat \"$tmpfile\" >> \"$config_file\""
+        fi
+    fi
+
+    if [ $rc -eq 0 ]; then
+        show_message "$windowTitle" "WiFi network '$ssid' has been saved."
+    fi
+
+    call_wpa_cli reconfigure
+
+    rm "$tmpfile"
+    IFS="$oldifs"
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Add WiFi Network Configuration
+#-------------------------------------------------------------------------------
+function add_network_screen() {
+    # Scan networks
+    scan_networks_base
+    if [ $? -ne 0 ]; then return $?; fi
+
+    local tmpfile=$(mktemp)
+    local oldifs="$IFS"
+    #~ IFS="\t\n"
+
+    echo "$R" | sort -nk 5,5 -nrk 3,3 | awk -F"\t" '{if ($5) print $5}' | sort -u > "$tmpfile"
+    local networks=$(cat "$tmpfile")
+    rm "$tmpfile"
+
+    # Show selection menu
+    local options=""
+    local nr=1
+
+    echo "$networks" | while read -r line; do
+        nr=$((nr+1))
+        echo -n "\"$nr\" \"$line\" " >> "$tmpfile"
+    done
+
+    options=$(cat "$tmpfile")
+    rm "$tmpfile"
+
+    eval show_menu \"Add Network\" \"Choose network to add:\" \
+        \"1\"  \"[MANUAL ENTRY]\" \
+        $options
+
+    local rc=$?
+    local tag="$R"
+    if [ $rc -ne 0 ]; then return $?; fi
+
+    # Get network SSID
+    if [ $tag -eq 1 ]; then
+        show_text_input "Add Network" "Please enter the network name (SSID):" ""
+        if [ $? -ne 0 ]; then return $?; fi
+        local ssid="$R"
+    else
+        nr=$((tag-1))
+        local ssid=$(echo "$networks" | head -n $nr | tail -n 1)
+    fi
+
+    # Get other parameters and save configuration
+    add_network_base "$ssid" "Add Network"
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Edit WiFi Network Configuration
+#-------------------------------------------------------------------------------
+function edit_network_screen() {
+    list_networks_base "Edit Network" "Choose network to edit:"
+    if [ $? -ne 0 ]; then return $?; fi
+
+    local network="$R"
+    local ssid=$(wpa_cli list_networks | tail -n +3 | awk -F"\t" "{if (\$1 == $network) print \$2}")
+
+    add_network_base "$ssid" "Edit Network"
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Delete WiFi Network Configuration
+#-------------------------------------------------------------------------------
+function delete_network_screen() {
+    list_networks_base "Delete Network" "Choose network to delete:"
+    if [ $? -ne 0 ]; then return $?; fi
+    local network="$R"
+    local ssid=$(wpa_cli list_networks | tail -n +3 | awk -F"\t" "{if (\$1 == $network) print \$2}")
+
+    show_yesno "Delete Network" "Do you really want to delete the WiFi network '$ssid'?"
+    if [ $? -ne 0 ]; then return $?; fi
+
+    call_wpa_cli remove_network "$network"
+    call_wpa_cli save_config
+
+    show_message "Delete Network" "WiFi network '$ssid' was deleted."
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Manually Edit WiFi Configuration File
+#-------------------------------------------------------------------------------
+function edit_config_file_screen() {
+    show_file_editor "$config_file" "$config_file"
+
+    if [ $? -ne 0 ]; then
+        return $?
+    fi
+
+    local tmpfile="$R"
+
+    if [ -w "$config_file" ]; then
+        cat "$tmpfile" > "$config_file"
+        rc=0
+    else
+        show_sudo_password_input "Edit Configuration"
+        local rc=$?
+
+        if [ $rc -eq 0 ]; then
+            echo $R | sudo -S sh -c "cat \"$tmpfile\" > \"$config_file\""
+        fi
+    fi
+
+    if [ $rc -eq 0 ]; then
+        show_message "Edit Configuration" "File $config_file has been saved."
+    fi
+
+    call_wpa_cli reconfigure
+    rm "$tmpfile"
+    return $rc
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Reload All WiFi Configurations
+#-------------------------------------------------------------------------------
+function reload_configuration_screen() {
+    call_wpa_cli reconfigure
+    show_message "Reload Configuration" "WiFi Configuration has been reloaded."
+    return $?
+}
+
+#-------------------------------------------------------------------------------
+# Screen: Show Currently Used IP Addresses
+#-------------------------------------------------------------------------------
+function show_ip_addresses_screen() {
+    while true; do
+        show_menu "Currently Used IP Addresses"               \
+                  "Choose the level of detail to see." \
+                    "1" "Show Short Summary"                  \
+                    "2" "Show Full Details"
+
+        local rc=$?
+
+        if [ $rc -ne 0 ]; then
+            break
+        fi
+
+        case $R in
+            1)
+                command="ip -brief addr show"
+                details="Summary"
+                ;;
+            2)
+                command="ip addr show"
+                details="Full Details"
+                ;;
+        esac
+
+        show_command_output "Currently Used IP Addresses" \
+                            "Network interfaces and IP addresses of this computer ($details):" \
+                            "$command"
+    done
+
+    return $rc
+}
+
+#===============================================================================
+# Let's go!
+#===============================================================================
+check_program_exists wpa_cli
+check_program_exists dialog
+
+determine_network_interface
+main_screen
+clear
