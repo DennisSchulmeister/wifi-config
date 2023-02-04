@@ -382,34 +382,36 @@ function main_screen() {
     call_wpa_cli reconfigure
 
     while true; do
-        show_menu "Main Menu"                                   \
-                  "Selected Network Interface: $interface"      \
-                    "1" "Select Network Interface"              \
-                    "2" "Scan for Available Networks"           \
-                    "-" "-------------------------------------" \
-                    "3" "List WiFi Network Configurations"      \
-                    "4" "Add WiFi Network Configuration"        \
-                    "5" "Edit WiFi Network Configuration"       \
-                    "6" "Delete WiFi Network Configuration"     \
-                    "-" "-------------------------------------" \
-                    "7" "Manually Edit WiFi Configuration File" \
-                    "8" "Reload WiFi Configuration File"        \
-                    "9" "Show Currently Used IP Addresses"
+        show_menu "Main Menu"                                    \
+                  "Selected Network Interface: $interface"       \
+                    "1"  "Select Network Interface"              \
+                    "2"  "Scan for Available Networks"           \
+                    "-"  "-------------------------------------" \
+                    "3"  "List WiFi Network Configurations"      \
+                    "4"  "Add WiFi Network Configuration"        \
+                    "5"  "Edit WiFi Network Configuration"       \
+                    "6"  "Delete WiFi Network Configuration"     \
+                    "-"  "-------------------------------------" \
+                    "7"  "Manually Edit WiFi Configuration File" \
+                    "8"  "Reload WiFi Configuration File"        \
+                    "9"  "Show Currently Used IP Addresses"      \
+                    "10" "Show WiFi status"                      \
 
         if [ $? -ne 0 ]; then
             break
         fi
 
         case $R in
-            1) select_interface_screen     ;;
-            2) scan_networks_screen        ;;
-            3) list_networks_screen        ;;
-            4) add_network_screen          ;;
-            5) edit_network_screen         ;;
-            6) delete_network_screen       ;;
-            7) edit_config_file_screen     ;;
-            8) reload_configuration_screen ;;
-            9) show_ip_addresses_screen    ;;
+            1)  select_interface_screen     ;;
+            2)  scan_networks_screen        ;;
+            3)  list_networks_screen        ;;
+            4)  add_network_screen          ;;
+            5)  edit_network_screen         ;;
+            6)  delete_network_screen       ;;
+            7)  edit_config_file_screen     ;;
+            8)  reload_configuration_screen ;;
+            9)  show_ip_addresses_screen    ;;
+            10) show_wifi_status_screen     ;;
         esac
     done
 }
@@ -607,13 +609,13 @@ function add_network_base() {
             echo "    psk=\"$password\"" >> "$tmpfile"
             ;;
         enterprise)
-            echo "    identity=\"$identity\"" >> "$tmpfile"
-            echo "    password=\"$password\"" >> "$tmpfile"
-            echo "    scan_ssid=1"            >> "$tmpfile"
-            echo "    key_mgmt=WPA-EAP"       >> "$tmpfile"
-            echo "    eap=EAP"                >> "$tmpfile"
-            echo "    phase1=\"peaplabel=0\"" >> "$tmpfile"
-            echo "    phase2=auth=MSCHAPV2\"" >> "$tmpfile"
+            echo "    identity=\"$identity\""   >> "$tmpfile"
+            echo "    password=\"$password\""   >> "$tmpfile"
+            echo "    scan_ssid=1"              >> "$tmpfile"
+            echo "    key_mgmt=WPA-EAP"         >> "$tmpfile"
+            echo "    eap=PEAP"                 >> "$tmpfile"
+            echo "    phase1=\"peaplabel=0\""   >> "$tmpfile"
+            echo "    phase2=\"auth=MSCHAPV2\"" >> "$tmpfile"
             ;;
     esac
 
@@ -803,10 +805,20 @@ function show_ip_addresses_screen() {
     return $rc
 }
 
+#-------------------------------------------------------------------------------
+# Screen: Show Wifi status
+#-------------------------------------------------------------------------------
+function show_wifi_status_screen() {
+    show_command_output "WiFi status" "" "iwconfig"
+    return $?
+}
+
 #===============================================================================
 # Let's go!
 #===============================================================================
+check_program_exists wpa_supplicant
 check_program_exists wpa_cli
+check_program_exists iwconfig
 check_program_exists dialog
 
 determine_network_interface
