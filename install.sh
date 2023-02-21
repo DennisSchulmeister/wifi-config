@@ -22,7 +22,7 @@ BOLD="\033[1m"
 RESET="\033[0m"
 
 confirm_or_exit() {
-    read answer
+    read answer < /dev/tty
 
     if [ "$answer" != "Y" -a "$answer" != "y" ]; then
         echo "Aborting installation, as you wish. Have a nice day."
@@ -42,7 +42,7 @@ exit_on_error() {
         echo "  $FORUM_URL"
         echo
         printf "$RESET"
-        
+
         exit 1
     fi
 }
