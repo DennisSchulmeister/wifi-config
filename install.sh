@@ -34,14 +34,16 @@ confirm_or_exit() {
 
 exit_on_error() {
     if [ $? -ne 0 ]; then
-        echo -ne "$RED"
+        printf "$RED"
         echo "An unexpected error occured during the installation."
         echo "Please get in contact with us, if you need help."
         echo
-        echo -ne "$BOLD"
+        printf "$BOLD"
         echo "  $FORUM_URL"
         echo
-        echo -ne "$RESET"
+        printf "$RESET"
+        
+        exit 1
     fi
 }
 
@@ -57,21 +59,21 @@ echo
 echo -n "Having said that, let's proceed. Shall we (Y/N)? "
 confirm_or_exit
 
-which wget 2> /dev/null
+which wget 1> /dev/null 2> /dev/null
 
 if [ $? -ne 0 ]; then
-    echo -ne "$RED"
+    printf "$RED"
     echo "This installation script needs wget to download files from the Internet."
     echo "Please install it using your local package manager."
     echo "On Debian, Ubuntu, Raspian or Raspberry Pi OS use the following command:"
     echo
-    echo -ne "$BOLD"
+    printf "$BOLD"
     echo "  sudo apt install wget"
-    echo -ne "$RESET$RED"
+    printf "$RESET$RED"
     echo
     echo "Other Linux systems have a similar tool for package installation."
     echo "Aftwards please restart the installation."
-    echo -ne "$RESET"
+    printf "$RESET"
 fi
 
 echo "The programm will be installed to $INSTALL_PATH."
@@ -101,17 +103,17 @@ exit_on_error
 $SUDO wget --directory-prefix="$INSTALL_PATH" "$DOWNLOAD_URL"
 
 if [ $? -ne 0 ]; then
-    echo -ne "$RED"
+    printf "$RED"
     echo "An error occured during the download."
     echo "Please check your Internet connection and try again."
     echo "To be sure, here you see your current IP addresses."
     echo
-    echo -ne "$BLUE"
+    printf "$BLUE"
     ip -brief addr show
     echo
-    echo -ne "$RED"
+    printf "$RED"
     echo "Are you really connected to the Internet?"
-    echo -ne "$RESET"
+    printf "$RESET"
     exit 1
 fi
 
@@ -125,9 +127,9 @@ $SUDO mv "$tmpfile" "/etc/profile.d/$PROGRAM_NAME.sh"
 echo "That's all. You might need to logout and login again, to be able to start the program."
 echo "You can start the program with the following command then:"
 echo
-echo -ne "$BLUE$BOLD"
+printf "$BLUE$BOLD"
 echo "  $PROGRAM_NAME"
-echo -ne "$RESET"
+printf "$RESET"
 echo
 echo "While we are at it, please make sure to have the following programs installed:"
 echo "wpa_supplicant, wpa_cli, iw, dialog"
