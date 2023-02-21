@@ -31,7 +31,7 @@ R=""
 # RETURNS: Nothing
 #-------------------------------------------------------------------------------
 function check_program_exists() {
-    which $1 > /dev/null
+    which $1 1> /dev/null 2> /dev/null
 
     if [ $? -ne 0 ]; then
         echo "This script requires $1 to be installed."
@@ -809,7 +809,7 @@ function show_ip_addresses_screen() {
 # Screen: Show Wifi status
 #-------------------------------------------------------------------------------
 function show_wifi_status_screen() {
-    show_command_output "WiFi status" "" "iwconfig"
+    show_command_output "WiFi status" "" "iw dev"
     return $?
 }
 
@@ -818,7 +818,7 @@ function show_wifi_status_screen() {
 #===============================================================================
 check_program_exists wpa_supplicant
 check_program_exists wpa_cli
-check_program_exists iwconfig
+check_program_exists iw
 check_program_exists dialog
 
 determine_network_interface
