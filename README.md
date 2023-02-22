@@ -53,8 +53,8 @@ and make it executable with `chmod +x wifi-config`.
 Uninstallation
 --------------
 
-The install script can also uninstall the program. Just confirm, that the old version shall be
-removed and answer No, when it asks to continue with the installation. Alternatively simple
+The install script can also uninstall the program. Just confirm that the old version shall be
+removed and answer No when it asks to continue with the installation. Alternatively simply
 delete the two files mentioned above.
 
 Help Wanted
