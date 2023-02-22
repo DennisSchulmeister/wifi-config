@@ -12,23 +12,22 @@ TUI for simple WiFi configuration based on wpa_supplicant
 This is a good old-fashioned shell script using `dialog` to create a simple menu-driven
 text user-interface for WiFi configuration. It is meant to be used on small Linux systems
 like on the Raspberry Pi, where no desktop environment or full-grown package like Network
-Manager are available. It is a tiny frontend for `wpa_supplicant` and its `wpa_cli` command,
+Manager is available. It is a tiny frontend for `wpa_supplicant` and its `wpa_cli` command,
 simplifying the most common actions:
 
  1. Search for available WiFi networks
  2. Add, edit or delete known WiFi networks
- 3. Manually edit the `wpa_supplication` configuration
+ 3. Manually edit the `wpa_supplicant` configuration
  4. Get basic information about network connectivity
 
 I wrote this for my Internet of Things lectures at DHBW Karlsruhe (Corporate State University
 Baden-Württemberg Karlsruhe), specifically because `raspi-config` doesn't handle WiFi well.
 In the lectures we use Raspberry Pi OS Lite as a bare-bones Linux system but still need to be
-able to connect to the University WiFi network (eduroam) using WPA Enterprise, where each
-student and teacher has their own credentials.
+able to connect to the University WiFi (eduroam) using WPA Enterprise, where each student and
+teacher has their own credentials.
 
 To keep the minimal spirit, I wrote this small script to help students with the WiFi setup.
-This way we don't need to install and configure Network Manager but stick with the pre-installed
-`wpa_supplicant` just as on a real embedded device.
+This way can stick with the pre-installed `wpa_supplicant` just as on a real embedded device.
 
 Installation
 ------------
