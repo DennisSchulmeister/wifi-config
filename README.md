@@ -47,7 +47,7 @@ The script creates two files on your device:
 
 After a re-login the program can be started with a simple `wifi-config`.
 
-Alternatively just download the file [wifi-config](https://raw.githubusercontent.com/DennisSchulmeister/wifi-config/main/install.sh)
+Alternatively just download the file [wifi-config](https://raw.githubusercontent.com/DennisSchulmeister/wifi-config/main/wifi-config)
 and make it executable with `chmod +x wifi-config`.
 
 Uninstallation
